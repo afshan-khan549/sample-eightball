@@ -1,107 +1,50 @@
-name: DevSecOps CI Pipeline
+name: DevSecOps CI Pipeline (Java + Maven)
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-env:
-  NODE_VERSION: "20"
 
 jobs:
-  # ---------------- CODE QUALITY ----------------
-  lint:
-    name: ESLint Check
+  build-and-scan:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      # Setup Java
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          distribution: "temurin"
+          java-version: "17"
 
-      - run: npm ci
-      - run: npm run lint || echo "No lint configured"
+      # Build with Maven
+      - name: Build project
+        run: mvn clean install -DskipTests
 
-  # ---------------- SBOM ----------------
-  sbom:
-    name: SBOM Generation
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
+      # Install Snyk
+      - name: Install Snyk
+        run: npm install -g snyk snyk-to-html
 
-      - run: npm install -g @cyclonedx/cyclonedx-npm
-      - run: npm ci
-      - run: cyclonedx-npm --output-file sbom.json
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.json
-
-  # ---------------- SNYK SCA ----------------
-  snyk-sca:
-    name: Snyk Dependency Scan (SCA)
-    runs-on: ubuntu-latest
-    needs: sbom
-    steps:
-      - uses: actions/checkout@v4
-
-      - run: npm install -g snyk snyk-to-html
-      - run: snyk auth ${{ secrets.SNYK_TOKEN }}
-
-      - run: |
-          snyk test --severity-threshold=high --json > sca.json
+      # SCA for Maven dependencies
+      - name: Snyk SCA (Maven)
+        run: |
+          snyk test --severity-threshold=high --file=pom.xml --json > sca.json
           snyk-to-html -i sca.json -o sca.html
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sca-report
-          path: sca.html
-
-  # ---------------- SNYK SAST ----------------
-  snyk-sast:
-    name: Snyk Code Scan (SAST)
-    runs-on: ubuntu-latest
-    needs: snyk-sca
-    steps:
-      - uses: actions/checkout@v4
-
-      - run: npm install -g snyk snyk-to-html
-      - run: snyk auth ${{ secrets.SNYK_TOKEN }}
-
-      - run: |
+      # SAST for Java code
+      - name: Snyk SAST
+        run: |
           snyk code test --severity-threshold=high --json > sast.json
           snyk-to-html -i sast.json -o sast.html
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sast-report
-          path: sast.html
-
-  # ---------------- BUILD ----------------
-  build:
-    name: Build Application
-    runs-on: ubuntu-latest
-    needs: snyk-sast
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - run: npm ci
-      - run: npm run build
-
-  # ---------------- TEST ----------------
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm test
+          name: snyk-reports
+          path: |
+            sca.html
+            sast.html
