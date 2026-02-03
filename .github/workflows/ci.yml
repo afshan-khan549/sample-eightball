@@ -28,7 +28,7 @@ jobs:
         run: npm install -g snyk snyk-to-html
 
       - name: Authenticate Snyk
-        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+        run: snyk config set api=${{ secrets.SNYK_TOKEN }}
 
       # SCA for Maven dependencies
       - name: Snyk SCA (Maven)
