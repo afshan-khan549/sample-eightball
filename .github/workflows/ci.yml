@@ -7,7 +7,7 @@ on:
 
 env:
   JAVA_VERSION: 17
-  CYCLONEDX_VERSION: 2.9.1  # use valid plugin version
+  CYCLONEDX_VERSION: 2.9.1  # valid released version
 
 jobs:
   sbom:
@@ -16,13 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java with Maven
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
-          maven: true
+          cache: "maven"  # this caches your ~/.m2 repo
+
+      - name: Install Maven
+        run: sudo apt-get update && sudo apt-get install -y maven
 
       - name: Generate SBOM
         run: mvn com.cyclonedx:cyclonedx-maven-plugin:${{ env.CYCLONEDX_VERSION }}:makeBom
@@ -35,64 +37,67 @@ jobs:
 
   build:
     name: Build Project
-    needs: sbom
     runs-on: ubuntu-latest
+    needs: sbom
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java with Maven
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
-          maven: true
+          cache: "maven"
 
-      - name: Build
+      - name: Install Maven
+        run: sudo apt-get update && sudo apt-get install -y maven
+
+      - name: Build with Maven
         run: mvn clean install -DskipTests
 
   sca:
     name: Dependency SCA Scan
-    needs: build
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - name: Install Snyk
         run: npm install -g snyk snyk-to-html
       - name: Authenticate Snyk
         run: snyk config set api=${{ secrets.SNYK_TOKEN }}
-      - name: Run SCA
+      - name: Run SCA Scan
         run: |
           snyk test --severity-threshold=high --file=pom.xml --json > sca.json
           snyk-to-html -i sca.json -o sca.html
 
   sast:
     name: SAST Scan
-    needs: build
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - name: Install Snyk
         run: npm install -g snyk snyk-to-html
       - name: Authenticate Snyk
         run: snyk config set api=${{ secrets.SNYK_TOKEN }}
-      - name: Run SAST
+      - name: Run SAST Scan
         run: |
           snyk code test . --severity-threshold=high --json > sast.json
           snyk-to-html -i sast.json -o sast.html
 
   test:
-    name: Run Unit Tests
-    needs: build
+    name: Run Tests
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Java with Maven
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
-          maven: true
-      - name: Run Tests
+          cache: "maven"
+      - name: Install Maven
+        run: sudo apt-get update && sudo apt-get install -y maven
+      - name: Run Unit Tests
         run: mvn test
