@@ -1,4 +1,4 @@
-name: DevSecOps CI Pipeline (Java + SBOM)
+name: DevSecOps CI Pipeline (Java + Reports)
 
 on:
   push:
@@ -19,16 +19,13 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Verify Maven
-        run: mvn -v
-
       - name: Generate SBOM
         run: mvn org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeBom
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
-          name: sbom
+          name: SBOM-Report
           path: target/bom.xml
 
   build:
@@ -37,7 +34,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Java + Maven
         uses: actions/setup-java@v4
         with:
@@ -45,8 +41,68 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Build
+      - name: Build Project
         run: mvn clean install -DskipTests
+
+  sca:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Snyk Tools
+        run: npm install -g snyk snyk-to-html
+
+      - name: Authenticate Snyk
+        run: snyk config set api=${{ secrets.SNYK_TOKEN }}
+
+      - name: Run SCA Scan
+        run: |
+          snyk test --file=pom.xml --json > sca.json || true
+          snyk-to-html -i sca.json -o sca.html
+
+      - name: Upload SCA Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCA-HTML-Report
+          path: sca.html
+
+  sast:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Snyk Tools
+        run: npm install -g snyk snyk-to-html
+
+      - name: Authenticate Snyk
+        run: snyk config set api=${{ secrets.SNYK_TOKEN }}
+
+      - name: Run SAST Scan
+        run: |
+          snyk code test . --json > sast.json || true
+          snyk-to-html -i sast.json -o sast.html
+
+      - name: Upload SAST Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAST-HTML-Report
+          path: sast.html
 
   test:
     runs-on: ubuntu-latest
@@ -54,7 +110,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Java + Maven
         uses: actions/setup-java@v4
         with:
@@ -62,5 +117,5 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Test
+      - name: Run Tests
         run: mvn test
