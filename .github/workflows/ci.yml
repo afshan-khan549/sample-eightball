@@ -7,6 +7,7 @@ on:
 
 env:
   JAVA_VERSION: 17
+  CYCLONEDX_VERSION: 2.9.5   # <-- specify a stable version
 
 jobs:
   sbom:
@@ -21,10 +22,14 @@ jobs:
           distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Install CycloneDX Maven Plugin
-        run: mvn com.cyclonedx:cyclonedx-maven-plugin:makeBom
+      - name: Install Maven
+        run: sudo apt-get update && sudo apt-get install -y maven
 
-      - uses: actions/upload-artifact@v4
+      - name: Generate SBOM
+        run: mvn com.cyclonedx:cyclonedx-maven-plugin:${{ env.CYCLONEDX_VERSION }}:makeBom
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
         with:
           name: sbom-artifact
           path: target/bom.xml
@@ -35,13 +40,11 @@ jobs:
     needs: sbom
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-
       - name: Build with Maven
         run: mvn clean install -DskipTests
 
